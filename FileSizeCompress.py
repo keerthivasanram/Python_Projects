@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QPushButton, QFileDialog, QMessageBox
 )
 from PyQt5.QtCore import Qt
+from PIL import Image
 
 class FileEditorGUI(QWidget):
     def __init__(self):
@@ -12,13 +13,13 @@ class FileEditorGUI(QWidget):
 
     def init_ui(self):
         self.setWindowTitle("File Size Editor")
-        self.setFixedSize(600, 600)
+        self.setFixedSize(400, 400)
         self.setStyleSheet("background-color: black;")
 
         layout = QVBoxLayout()
         layout.setSpacing(20)
 
-        # Label for selected file
+        # Label for file
         self.file_label = QLabel("No file selected")
         self.file_label.setStyleSheet("color: white; font-size: 14px;")
         self.file_label.setAlignment(Qt.AlignCenter)
@@ -35,7 +36,7 @@ class FileEditorGUI(QWidget):
         upload_btn.clicked.connect(self.select_file)
         layout.addWidget(upload_btn)
 
-        # Input for target size
+        # Input field
         self.size_input = QLineEdit()
         self.size_input.setPlaceholderText("Enter target size in KB")
         self.size_input.setStyleSheet("""
@@ -86,6 +87,10 @@ class FileEditorGUI(QWidget):
             QMessageBox.warning(self, "Invalid Input", "Please enter a valid number.")
             return None
 
+    def is_image(self, path):
+        ext = os.path.splitext(path)[1].lower()
+        return ext in ['.jpg', '.jpeg', '.png']
+
     def shrink_file(self):
         if not self.file_path:
             QMessageBox.warning(self, "No File", "Please select a file.")
@@ -100,13 +105,39 @@ class FileEditorGUI(QWidget):
             QMessageBox.information(self, "Already Small", "File is already smaller than target size.")
             return
 
-        with open(self.file_path, "rb") as f:
-            data = f.read(target_size)
+        if self.is_image(self.file_path):
+            try:
+                self.compress_image(self.file_path, target_size)
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Image compression failed: {e}")
+        else:
+            # Truncate binary/text files
+            with open(self.file_path, "rb") as f:
+                data = f.read(target_size)
 
-        with open(self.file_path, "wb") as f:
+            with open(self.file_path, "wb") as f:
+                f.write(data)
+
+        QMessageBox.information(self, "Success", f"File shrunk to approx. {target_size // 1024} KB.")
+
+    def compress_image(self, path, target_size):
+        img = Image.open(path)
+        temp_path = "temp_compressed.jpg"
+        quality = 95
+
+        # Reduce quality step-by-step
+        for q in range(95, 10, -5):
+            img.save(temp_path, optimize=True, quality=q)
+            if os.path.getsize(temp_path) <= target_size:
+                break
+
+        # Replace original file
+        with open(temp_path, "rb") as f:
+            data = f.read()
+        with open(path, "wb") as f:
             f.write(data)
 
-        QMessageBox.information(self, "Success", f"File shrunk to {target_size // 1024} KB.")
+        os.remove(temp_path)
 
     def increase_file(self):
         if not self.file_path:
@@ -119,7 +150,7 @@ class FileEditorGUI(QWidget):
 
         current_size = os.path.getsize(self.file_path)
         if current_size >= target_size:
-            QMessageBox.information(self, "Already Big", "File is already larger than target size.")
+            QMessageBox.information(self, "Already Large", "File is already larger than target size.")
             return
 
         padding_size = target_size - current_size
